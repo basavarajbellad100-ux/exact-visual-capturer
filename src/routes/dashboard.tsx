@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import jsQR from "jsqr";
 import {
   Shield, ShieldAlert, ShieldCheck, ShieldX, Loader2, Trash2,
-  Link2, MessageSquareWarning, CreditCard, Sparkles,
+  Link2, MessageSquareWarning, CreditCard, Sparkles, QrCode, Upload,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type InputType = "link" | "message" | "transaction";
+type InputType = "link" | "message" | "transaction" | "qr";
 
 const RISK_STYLES: Record<string, { color: string; icon: typeof Shield; label: string }> = {
   safe:     { color: "text-success",     icon: ShieldCheck, label: "Safe" },
@@ -35,10 +36,54 @@ function Dashboard() {
   const [ready, setReady] = useState(false);
   const [type, setType] = useState<InputType>("link");
   const [text, setText] = useState("");
+  const [qrPreview, setQrPreview] = useState<string | null>(null);
+  const [qrDecoding, setQrDecoding] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const fetchScans = useServerFn(listScans);
   const runAnalyze = useServerFn(analyzeFraud);
   const runDelete = useServerFn(deleteScan);
+
+  const handleQrFile = async (file: File) => {
+    setQrDecoding(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Could not read file"));
+        reader.readAsDataURL(file);
+      });
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Invalid image"));
+        img.src = dataUrl;
+      });
+      const canvas = document.createElement("canvas");
+      const maxSize = 1024;
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas unavailable");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "attemptBoth",
+      });
+      if (!code || !code.data) {
+        toast.error("No QR code found in this image. Try a clearer photo.");
+        return;
+      }
+      setQrPreview(dataUrl);
+      setText(code.data);
+      toast.success("QR code decoded");
+    } catch (e) {
+      toast.error((e as Error).message || "Failed to decode QR");
+    } finally {
+      setQrDecoding(false);
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
@@ -62,6 +107,7 @@ function Dashboard() {
       runAnalyze({ data: vars }),
     onSuccess: () => {
       setText("");
+      setQrPreview(null);
       qc.invalidateQueries({ queryKey: ["scans"] });
       toast.success("Scan complete");
     },
@@ -85,6 +131,7 @@ function Dashboard() {
     link: "Paste a suspicious URL, e.g. https://hdfc-secure-login.xyz/verify",
     message: "Paste the message or email you received…",
     transaction: "Describe the payment request, e.g. 'UPI request for ₹5000 from rahul@oksbi to confirm KYC'",
+    qr: "Upload a QR code image — we'll decode it and analyze the contents.",
   };
 
   return (
@@ -103,20 +150,70 @@ function Dashboard() {
         <div className="grid gap-8 lg:grid-cols-[1.1fr_1fr]">
           {/* Scanner */}
           <section className="border-border/60 bg-card/60 rounded-2xl border p-6 backdrop-blur">
-            <Tabs value={type} onValueChange={(v) => setType(v as InputType)}>
-              <TabsList className="grid w-full grid-cols-3">
+            <Tabs
+              value={type}
+              onValueChange={(v) => {
+                setType(v as InputType);
+                setText("");
+                setQrPreview(null);
+              }}
+            >
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="link"><Link2 className="mr-1.5 h-4 w-4" />Link</TabsTrigger>
                 <TabsTrigger value="message"><MessageSquareWarning className="mr-1.5 h-4 w-4" />Message</TabsTrigger>
                 <TabsTrigger value="transaction"><CreditCard className="mr-1.5 h-4 w-4" />Payment</TabsTrigger>
+                <TabsTrigger value="qr"><QrCode className="mr-1.5 h-4 w-4" />QR</TabsTrigger>
               </TabsList>
             </Tabs>
 
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={placeholder[type]}
-              className="bg-background/60 mt-4 min-h-[140px] resize-none text-base"
-            />
+            {type === "qr" ? (
+              <div className="mt-4 space-y-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleQrFile(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={qrDecoding}
+                  className="border-border/60 bg-background/40 hover:border-primary/60 hover:bg-primary/5 flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 transition-colors"
+                >
+                  {qrDecoding ? (
+                    <Loader2 className="text-primary h-8 w-8 animate-spin" />
+                  ) : qrPreview ? (
+                    <img src={qrPreview} alt="QR preview" className="h-32 w-32 rounded-lg object-contain" />
+                  ) : (
+                    <>
+                      <Upload className="text-primary h-8 w-8" />
+                      <p className="text-sm font-medium">Click to upload a QR code image</p>
+                      <p className="text-muted-foreground text-xs">PNG, JPG, or screenshot</p>
+                    </>
+                  )}
+                </button>
+                {text && (
+                  <div className="border-border/60 bg-background/60 rounded-lg border p-3">
+                    <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
+                      Decoded contents
+                    </p>
+                    <p className="mt-1 break-all font-mono text-sm">{text}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={placeholder[type]}
+                className="bg-background/60 mt-4 min-h-[140px] resize-none text-base"
+              />
+            )}
 
             <Button
               disabled={analyze.isPending || text.trim().length < 3}
@@ -127,12 +224,13 @@ function Dashboard() {
               {analyze.isPending ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing…</>
               ) : (
-                <><Sparkles className="mr-2 h-4 w-4" /> Check for fraud</>
+                <><Sparkles className="mr-2 h-4 w-4" /> {type === "qr" ? "Analyze QR code" : "Check for fraud"}</>
               )}
             </Button>
 
             {analyze.data && <ScanResult scan={analyze.data} />}
           </section>
+
 
           {/* History */}
           <section className="border-border/60 bg-card/60 rounded-2xl border p-6 backdrop-blur">
