@@ -107,6 +107,7 @@ function Dashboard() {
       runAnalyze({ data: vars }),
     onSuccess: () => {
       setText("");
+      setQrPreview(null);
       qc.invalidateQueries({ queryKey: ["scans"] });
       toast.success("Scan complete");
     },
