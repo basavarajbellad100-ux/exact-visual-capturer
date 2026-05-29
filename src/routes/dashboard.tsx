@@ -131,6 +131,7 @@ function Dashboard() {
     link: "Paste a suspicious URL, e.g. https://hdfc-secure-login.xyz/verify",
     message: "Paste the message or email you received…",
     transaction: "Describe the payment request, e.g. 'UPI request for ₹5000 from rahul@oksbi to confirm KYC'",
+    qr: "Upload a QR code image — we'll decode it and analyze the contents.",
   };
 
   return (
@@ -149,20 +150,70 @@ function Dashboard() {
         <div className="grid gap-8 lg:grid-cols-[1.1fr_1fr]">
           {/* Scanner */}
           <section className="border-border/60 bg-card/60 rounded-2xl border p-6 backdrop-blur">
-            <Tabs value={type} onValueChange={(v) => setType(v as InputType)}>
-              <TabsList className="grid w-full grid-cols-3">
+            <Tabs
+              value={type}
+              onValueChange={(v) => {
+                setType(v as InputType);
+                setText("");
+                setQrPreview(null);
+              }}
+            >
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="link"><Link2 className="mr-1.5 h-4 w-4" />Link</TabsTrigger>
                 <TabsTrigger value="message"><MessageSquareWarning className="mr-1.5 h-4 w-4" />Message</TabsTrigger>
                 <TabsTrigger value="transaction"><CreditCard className="mr-1.5 h-4 w-4" />Payment</TabsTrigger>
+                <TabsTrigger value="qr"><QrCode className="mr-1.5 h-4 w-4" />QR</TabsTrigger>
               </TabsList>
             </Tabs>
 
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={placeholder[type]}
-              className="bg-background/60 mt-4 min-h-[140px] resize-none text-base"
-            />
+            {type === "qr" ? (
+              <div className="mt-4 space-y-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleQrFile(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={qrDecoding}
+                  className="border-border/60 bg-background/40 hover:border-primary/60 hover:bg-primary/5 flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 transition-colors"
+                >
+                  {qrDecoding ? (
+                    <Loader2 className="text-primary h-8 w-8 animate-spin" />
+                  ) : qrPreview ? (
+                    <img src={qrPreview} alt="QR preview" className="h-32 w-32 rounded-lg object-contain" />
+                  ) : (
+                    <>
+                      <Upload className="text-primary h-8 w-8" />
+                      <p className="text-sm font-medium">Click to upload a QR code image</p>
+                      <p className="text-muted-foreground text-xs">PNG, JPG, or screenshot</p>
+                    </>
+                  )}
+                </button>
+                {text && (
+                  <div className="border-border/60 bg-background/60 rounded-lg border p-3">
+                    <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
+                      Decoded contents
+                    </p>
+                    <p className="mt-1 break-all font-mono text-sm">{text}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={placeholder[type]}
+                className="bg-background/60 mt-4 min-h-[140px] resize-none text-base"
+              />
+            )}
 
             <Button
               disabled={analyze.isPending || text.trim().length < 3}
@@ -173,12 +224,13 @@ function Dashboard() {
               {analyze.isPending ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing…</>
               ) : (
-                <><Sparkles className="mr-2 h-4 w-4" /> Check for fraud</>
+                <><Sparkles className="mr-2 h-4 w-4" /> {type === "qr" ? "Analyze QR code" : "Check for fraud"}</>
               )}
             </Button>
 
             {analyze.data && <ScanResult scan={analyze.data} />}
           </section>
+
 
           {/* History */}
           <section className="border-border/60 bg-card/60 rounded-2xl border p-6 backdrop-blur">
