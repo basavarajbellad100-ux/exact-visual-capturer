@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const ScanInput = z.object({
-  inputType: z.enum(["link", "message", "transaction"]),
+  inputType: z.enum(["link", "message", "transaction", "qr"]),
   inputText: z.string().min(3).max(4000),
 });
 
