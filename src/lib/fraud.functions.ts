@@ -35,6 +35,7 @@ export const analyzeFraud = createServerFn({ method: "POST" })
       link: "URL / link",
       message: "Text message, email, or chat message",
       transaction: "Payment / transaction request",
+      qr: "QR code payload (decoded contents of a scanned QR code — could be a URL, UPI payment string, Wi-Fi config, contact, or arbitrary text)",
     }[data.inputType];
 
     const systemPrompt = `You are Fraud Shield, a cybersecurity assistant that protects first-time digital users from scams, phishing, and fraudulent financial transactions.
