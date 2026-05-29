@@ -36,10 +36,54 @@ function Dashboard() {
   const [ready, setReady] = useState(false);
   const [type, setType] = useState<InputType>("link");
   const [text, setText] = useState("");
+  const [qrPreview, setQrPreview] = useState<string | null>(null);
+  const [qrDecoding, setQrDecoding] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
   const fetchScans = useServerFn(listScans);
   const runAnalyze = useServerFn(analyzeFraud);
   const runDelete = useServerFn(deleteScan);
+
+  const handleQrFile = async (file: File) => {
+    setQrDecoding(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Could not read file"));
+        reader.readAsDataURL(file);
+      });
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Invalid image"));
+        img.src = dataUrl;
+      });
+      const canvas = document.createElement("canvas");
+      const maxSize = 1024;
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas unavailable");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "attemptBoth",
+      });
+      if (!code || !code.data) {
+        toast.error("No QR code found in this image. Try a clearer photo.");
+        return;
+      }
+      setQrPreview(dataUrl);
+      setText(code.data);
+      toast.success("QR code decoded");
+    } catch (e) {
+      toast.error((e as Error).message || "Failed to decode QR");
+    } finally {
+      setQrDecoding(false);
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
