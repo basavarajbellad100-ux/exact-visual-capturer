@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import jsQR from "jsqr";
 import {
   Shield, ShieldAlert, ShieldCheck, ShieldX, Loader2, Trash2,
-  Link2, MessageSquareWarning, CreditCard, Sparkles,
+  Link2, MessageSquareWarning, CreditCard, Sparkles, QrCode, Upload,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -20,7 +21,7 @@ export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
 });
 
-type InputType = "link" | "message" | "transaction";
+type InputType = "link" | "message" | "transaction" | "qr";
 
 const RISK_STYLES: Record<string, { color: string; icon: typeof Shield; label: string }> = {
   safe:     { color: "text-success",     icon: ShieldCheck, label: "Safe" },
